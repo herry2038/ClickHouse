@@ -59,7 +59,9 @@ InputFormatPtr getInputFormatFromASTInsertQuery(
         : std::make_unique<EmptyReadBuffer>();
 
     /// Create a source from input buffer using format from query
+    // 根据格式，输入buffer，生成对应的inputFormat，例如：CSVInputFormat
     auto source = context->getInputFormat(ast_insert_query->format, *input_buffer, header, context->getSettings().max_insert_block_size);
+    // 这里为什么还要再addBuffer呢？？？
     source->addBuffer(std::move(input_buffer));
     return source;
 }

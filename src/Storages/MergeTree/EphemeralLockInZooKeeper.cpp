@@ -32,8 +32,8 @@ EphemeralLockInZooKeeper::EphemeralLockInZooKeeper(
     }
 
     /// Write the path to the secondary node in the main node.
-    path = zookeeper->create(path_prefix, holder_path, zkutil::CreateMode::EphemeralSequential);
 
+    path = zookeeper->create(path_prefix, holder_path, zkutil::CreateMode::EphemeralSequential);
     if (path.size() <= path_prefix.size())
         throw Exception("Logical error: name of the main node is shorter than prefix.", ErrorCodes::LOGICAL_ERROR);
 }

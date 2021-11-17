@@ -933,7 +933,9 @@ static std::tuple<ASTPtr, BlockIO> executeQueryImpl(
     return std::make_tuple(ast, std::move(res));
 }
 
-
+// 
+// 执行SQL的入口: DB::executeQuery
+// 
 BlockIO executeQuery(
     const String & query,
     ContextMutablePtr context,
@@ -971,6 +973,9 @@ BlockIO executeQuery(
 }
 
 
+// 服务请求的重要执行路径 DB::executeQuery
+// 1. 调用DB::executeQueryImpl完成SQL语句语法解析、解释执行等；
+// 2. 
 void executeQuery(
     ReadBuffer & istr,
     WriteBuffer & ostr,
@@ -1011,19 +1016,24 @@ void executeQuery(
     ASTPtr ast;
     BlockIO streams;
 
+    // 1. 这里完成SQL语句语法解析，调用解析SQL完成执行流生成；
     std::tie(ast, streams) = executeQueryImpl(begin, end, context, false, QueryProcessingStage::Complete, &istr);
     auto & pipeline = streams.pipeline;
 
+    // 2. 完成数据流处理
     std::unique_ptr<WriteBuffer> compressed_buffer;
     try
     {
-        if (pipeline.pushing())
+        if (pipeline.pushing()) // 插入SQL
         {
+            // 获取输入管道，一般从插入SQL的内容中获取，也有可能是文件，这里还要考虑FORMAT
             auto pipe = getSourceFromASTInsertQuery(ast, true, pipeline.getHeader(), context, nullptr);
+            // complete负责完成pipeline的初始化工作，向量processors中有内容，才算完成了初始化
             pipeline.complete(std::move(pipe));
         }
-        else if (pipeline.pulling())
+        else if (pipeline.pulling()) // 查询SQL
         {
+            // SELECT [INTO OUTFILE]
             const ASTQueryWithOutput * ast_query_with_output = dynamic_cast<const ASTQueryWithOutput *>(ast.get());
 
             WriteBuffer * out_buf = &ostr;
@@ -1079,11 +1089,12 @@ void executeQuery(
 
             pipeline.complete(std::move(out));
         }
-        else
+        else  // 非INSERT，非SELECT？？？？
         {
             pipeline.setProgressCallback(context->getProgressCallback());
         }
 
+        // 前面调用compelete，就会完成初始化，开始执行
         if (pipeline.initialized())
         {
             CompletedPipelineExecutor executor(pipeline);

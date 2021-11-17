@@ -451,7 +451,7 @@ void QueryPipeline::complete(std::shared_ptr<IOutputFormat> format)
 
     initRowsBeforeLimit(format.get());
     output_format = format.get();
-
+    
     processors.emplace_back(std::move(format));
 }
 

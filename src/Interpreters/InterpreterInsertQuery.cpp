@@ -195,6 +195,7 @@ Chain InterpreterInsertQuery::buildChainImpl(
     }
     else
     {
+        // 1. PushingToViewsChain：职责：往表中写数据
         out = buildPushingToViewsChain(table, metadata_snapshot, context_ptr, query_ptr, no_destination, thread_status, elapsed_counter_ms);
     }
 
@@ -214,6 +215,7 @@ Chain InterpreterInsertQuery::buildChainImpl(
 
     auto adding_missing_defaults_actions = std::make_shared<ExpressionActions>(adding_missing_defaults_dag);
 
+    // 2. AddingMissingDefaultChain：职责：添加一些额外列到Block中
     /// Actually we don't know structure of input blocks from query/table,
     /// because some clients break insertion protocol (columns != header)
     out.addSource(std::make_shared<ConvertingTransform>(query_sample_block, adding_missing_defaults_actions));
@@ -227,15 +229,21 @@ Chain InterpreterInsertQuery::buildChainImpl(
     {
         bool table_prefers_large_blocks = table->prefersLargeBlocks();
 
+        // 3. SquashingChunksTransform：职责：流合并
         out.addSource(std::make_shared<SquashingChunksTransform>(
             out.getInputHeader(),
             table_prefers_large_blocks ? settings.min_insert_block_size_rows : settings.max_block_size,
             table_prefers_large_blocks ? settings.min_insert_block_size_bytes : 0));
     }
 
+    // 4. CountingBlockOutputChain：职责：代理类，它计算写入的块，行，字节的数量
     auto counting = std::make_shared<CountingTransform>(out.getInputHeader(), thread_status);
     counting->setProcessListElement(context_ptr->getProcessListElement());
     out.addSource(std::move(counting));
+
+
+    // 最终流顺序：
+    // CountingBlockOutputChian -> SquashingBlockOutputChain -> AddMissingDeafultChain -> PushingToViewBlockOutputChain
 
     return out;
 }
@@ -270,6 +278,7 @@ BlockIO InterpreterInsertQuery::execute()
         }
     }
 
+    // 输出链式对象
     std::vector<Chain> out_chains;
     if (!is_distributed_insert_select || query.watch)
     {
@@ -360,6 +369,7 @@ BlockIO InterpreterInsertQuery::execute()
             pipeline = interpreter_watch.buildQueryPipeline();
         }
 
+        // 生成输出链式对象几何，根据stream流数量（线程数）
         for (size_t i = 0; i < out_streams_size; i++)
         {
             auto out = buildChainImpl(table, metadata_snapshot, query_sample_block, nullptr, nullptr);
@@ -422,7 +432,7 @@ BlockIO InterpreterInsertQuery::execute()
         res.pipeline = QueryPipelineBuilder::getPipeline(std::move(pipeline));
     }
     else
-    {
+    {   // 直接插入数据的会落到这里，前期学习研究以这个为主。
         res.pipeline = QueryPipeline(std::move(out_chains.at(0)));
         res.pipeline.setNumThreads(std::min<size_t>(res.pipeline.getNumThreads(), settings.max_threads));
 
