@@ -202,6 +202,7 @@ bool PipelineExecutor::tryAddProcessorToStackIfUpdated(ExecutingGraph::Edge & ed
     return true;
 }
 
+
 bool PipelineExecutor::prepareProcessor(UInt64 pid, size_t thread_number, Queue & queue, Queue & async_queue, std::unique_lock<std::mutex> node_lock)
 {
     /// In this method we have ownership on node.
@@ -221,6 +222,7 @@ bool PipelineExecutor::prepareProcessor(UInt64 pid, size_t thread_number, Queue 
 
         try
         {
+            // INSERT语句，第一次去prepare，INPUT和OUTPUT都没有数据，所以这里node.last_processor_status = NEED_DATA
             node.last_processor_status = node.processor->prepare(node.updated_input_ports, node.updated_output_ports);
         }
         catch (...)

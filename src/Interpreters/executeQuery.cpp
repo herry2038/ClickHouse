@@ -934,8 +934,9 @@ static std::tuple<ASTPtr, BlockIO> executeQueryImpl(
 }
 
 // 
-// 执行SQL的入口: DB::executeQuery
-// 
+// clickhouse-client工具调用时的执行SQL的入口: DB::executeQuery
+// 使用clickhouse-client工具，调用栈为：
+// TCPServerDispatcher::run -> TCPHandle::run --> TCPHandler::runImpl->DB::executyQuery
 BlockIO executeQuery(
     const String & query,
     ContextMutablePtr context,

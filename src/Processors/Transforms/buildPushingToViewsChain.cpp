@@ -165,6 +165,7 @@ Chain buildPushingToViewsChain(
     auto table_id = storage->getStorageID();
     Dependencies dependencies = DatabaseCatalog::instance().getDependencies(table_id);
 
+    // 固化视图需要特殊处理。
     /// We need special context for materialized views insertions
     ContextMutablePtr select_context;
     ContextMutablePtr insert_context;
@@ -271,7 +272,7 @@ Chain buildPushingToViewsChain(
             out = buildPushingToViewsChain(
                 dependent_table, dependent_metadata_snapshot, insert_context, ASTPtr(), true, view_thread_status, view_counter_ms, storage_header);
         }
-        else
+        else // 这里直接写表吧？？？
             out = buildPushingToViewsChain(
                 dependent_table, dependent_metadata_snapshot, insert_context, ASTPtr(), false, view_thread_status, view_counter_ms);
 

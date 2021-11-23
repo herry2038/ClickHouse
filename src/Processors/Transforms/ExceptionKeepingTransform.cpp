@@ -19,6 +19,14 @@ ExceptionKeepingTransform::ExceptionKeepingTransform(const Block & in_header, co
 {
 }
 
+// INSERT的pipeline执行操作时，会调用如下堆栈
+// TCPHandler::processInsertQuery -> PushingPipelineExecutor::start -> PipelineExecutor::executeStep 
+//       -> PipelineExecutor::executeStepImpl-> PipelineExecutor::prepareProcessor
+//       -> IProcessor::prepare
+//       -> ExceptionKeepingTransform::prepare
+// ExceptionKeepingTransform继承于IProcessor
+//    IProcessor::prepare()不带参数的方法是个虚函数，由子类（ExceptionKeepingTransform继承于IProcessor）实现。
+
 IProcessor::Status ExceptionKeepingTransform::prepare()
 {
     if (!ignore_on_start_and_finish && !was_on_start_called)
@@ -35,6 +43,7 @@ IProcessor::Status ExceptionKeepingTransform::prepare()
         return Status::PortFull;
     }
 
+    // INSERT操作时，OUTPUT第一次肯定是没有数据的
     /// Output if has data.
     if (ready_output)
     {
@@ -56,6 +65,7 @@ IProcessor::Status ExceptionKeepingTransform::prepare()
 
         input.setNeeded();
 
+        // INSERT操作时，INSERT第一次肯定是没有数据的，所以，会返回Status::NeedData
         if (!input.hasData())
             return Status::NeedData;
 
