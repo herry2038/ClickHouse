@@ -104,6 +104,8 @@ TCPHandler::~TCPHandler()
     }
 }
 
+// clickhouse-clinet连接的服务入口
+// 在这里负责循环执行请求
 void TCPHandler::runImpl()
 {
     setThreadName("TCPHandler");
@@ -314,15 +316,17 @@ void TCPHandler::runImpl()
                 return receiveReadTaskResponseAssumeLocked();
             });
 
+            // SQL 请求处理，负责解析SQL、Interpreter Query，生成并返回BlockIO（包括pipeline）
             /// Processing Query
             state.io = executeQuery(state.query, query_context, false, state.stage);
 
             after_check_cancelled.restart();
             after_send_progress.restart();
-
+            
             if (state.io.pipeline.pushing())
             /// FIXME: check explicitly that insert query suggests to receive data via native protocol,
             {
+                // 插入操作入口在这里
                 state.need_receive_data_for_insert = true;
                 processInsertQuery();
             }
