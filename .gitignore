@@ -10,6 +10,7 @@
 *.logrt
 
 /build
+/bld*
 /build_*
 /build-*
 /tests/venv
