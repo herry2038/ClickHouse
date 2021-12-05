@@ -179,8 +179,8 @@ void PushingAsyncPipelineExecutor::push(Chunk chunk)
     if (!started)
         start();
 
-    bool is_pushed = pushing_source->setData(std::move(chunk));
     data->rethrowExceptionIfHas();
+    bool is_pushed = pushing_source->setData(std::move(chunk));
 
     if (!is_pushed)
         throw Exception(ErrorCodes::LOGICAL_ERROR,
