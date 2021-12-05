@@ -747,7 +747,7 @@ void PipelineExecutor::initializeExecution(size_t num_threads)
 void PipelineExecutor::executeImpl(size_t num_threads)
 {
     OpenTelemetrySpanHolder span("PipelineExecutor::executeImpl()");
-
+    // 执行初始化
     initializeExecution(num_threads);
 
     using ThreadsData = std::vector<ThreadFromGlobalPool>;
@@ -766,7 +766,7 @@ void PipelineExecutor::executeImpl(size_t num_threads)
                     thread.join();
         }
     );
-
+    // 线程数大于1，启动线程池去执行，否则本线程执行
     if (num_threads > 1)
     {
         auto thread_group = CurrentThread::getGroup();
@@ -825,7 +825,7 @@ void PipelineExecutor::executeImpl(size_t num_threads)
                 thread.join();
     }
     else
-        executeSingleThread(0, num_threads);
+        executeSingleThread(0, num_threads);  // num_thread == 1 ，在本线程执行
 
     finished_flag = true;
 }

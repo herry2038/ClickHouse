@@ -23,6 +23,8 @@ namespace ErrorCodes
 
 const String HDFSBuilderWrapper::CONFIG_PREFIX = "hdfs";
 const String HDFS_URL_REGEXP = "^hdfs://[^:/]*:[0-9]*/.*";
+const String HDFS_LOCAL_URL_REGEXP = "^file://.*";
+
 
 void HDFSBuilderWrapper::loadFromConfig(const Poco::Util::AbstractConfiguration & config,
     const String & config_path, bool isUser)
@@ -201,7 +203,7 @@ HDFSFSPtr createHDFSFS(hdfsBuilder * builder)
 
 void checkHDFSURL(const String & url)
 {
-    if (!re2::RE2::FullMatch(url, HDFS_URL_REGEXP))
+    if (!re2::RE2::FullMatch(url, HDFS_URL_REGEXP) && !re2::RE2::FullMatch(url, HDFS_LOCAL_URL_REGEXP))
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "Bad hdfs url: {}. It should have structure 'hdfs://<host_name>:<port>/<path>'", url);
 }
 

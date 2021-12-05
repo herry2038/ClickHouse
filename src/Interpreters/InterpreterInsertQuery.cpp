@@ -369,7 +369,7 @@ BlockIO InterpreterInsertQuery::execute()
             pipeline = interpreter_watch.buildQueryPipeline();
         }
 
-        // 生成输出链式对象几何，根据stream流数量（线程数）
+        // 生成输出链式对象，根据stream流数量（线程数）
         for (size_t i = 0; i < out_streams_size; i++)
         {
             auto out = buildChainImpl(table, metadata_snapshot, query_sample_block, nullptr, nullptr);

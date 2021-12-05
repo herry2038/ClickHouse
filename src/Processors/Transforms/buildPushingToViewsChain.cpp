@@ -349,9 +349,13 @@ Chain buildPushingToViewsChain(
     /// Do not push to destination table if the flag is set
     else if (!no_destination)
     {
+        // 普通的插入操作会运行到这里，例如：INSERT INTO tb_partition values(1, '123', '2021-11-18 12:20:20', '120000'); 
+        // 对于MergeTree，这里会生成MeegeTreeSink实例
         auto sink = storage->write(query_ptr, metadata_snapshot, context);
         metadata_snapshot->check(sink->getHeader().getColumnsWithTypeAndName());
+        // setRuntimeData是ExceptionKeepingTransform（一种IProcessor）的一个方法，设置线程状态和已经消耗的毫秒数    
         sink->setRuntimeData(thread_status, elapsed_counter_ms);
+        // 这里才发现MergeTreeSink，居然是一种Source，而不是像名字看起来的是一种sink，source会被放到processors的队列最前
         result_chain.addSource(std::move(sink));
     }
 

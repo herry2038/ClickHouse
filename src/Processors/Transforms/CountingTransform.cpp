@@ -22,6 +22,7 @@ void CountingTransform::transform(Chunk & chunk)
 
     if (thread_status)
     {
+        // 增加线程对象的统计行数和字节数
         thread_status->performance_counters.increment(ProfileEvents::InsertedRows, local_progress.read_rows);
         thread_status->performance_counters.increment(ProfileEvents::InsertedBytes, local_progress.read_bytes);
     }
@@ -30,7 +31,7 @@ void CountingTransform::transform(Chunk & chunk)
         ProfileEvents::increment(ProfileEvents::InsertedRows, local_progress.read_rows);
         ProfileEvents::increment(ProfileEvents::InsertedBytes, local_progress.read_bytes);
     }
-
+    // 更新本查询相关进度
     if (process_elem)
         process_elem->updateProgressOut(local_progress);
 

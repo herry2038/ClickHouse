@@ -71,6 +71,8 @@ public:
 
         if (has_process_data)
         {
+            // 继续把数据往outputPort推送
+            // 注意这里会触发updateVersion的调用，驱动前向Edge来出触发邻居processor的执行
             output.push(std::move(current_chunk));
             has_process_data = false;
         }

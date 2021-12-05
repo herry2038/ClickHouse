@@ -66,7 +66,9 @@ StorageHDFS::StorageHDFS(
     : IStorage(table_id_), WithContext(context_), uri(uri_), format_name(format_name_), compression_method(compression_method_)
     , partition_by(partition_by_)
 {
-    context_->getRemoteHostFilter().checkURL(Poco::URI(uri));
+    // 取消Remote hostcheck，尝试本地文件模式
+    //context_->getRemoteHostFilter().checkURL(Poco::URI(uri));
+
     checkHDFSURL(uri);
 
     StorageInMemoryMetadata storage_metadata;
@@ -151,6 +153,7 @@ public:
             Block res;
             if (reader->pull(res))
             {
+                // 这里的Columns中已经带有字段和值了
                 Columns columns = res.getColumns();
                 UInt64 num_rows = res.rows();
 
@@ -165,7 +168,7 @@ public:
                 {
                     size_t last_slash_pos = current_path.find_last_of('/');
                     auto file_name = current_path.substr(last_slash_pos + 1);
-
+                    // 创建num_rows行对应的column的固定的数据
                     auto column = DataTypeString().createColumnConst(num_rows, std::move(file_name));
                     columns.push_back(column->convertToFullColumnIfConst());
                 }

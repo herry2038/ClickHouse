@@ -43,13 +43,17 @@ ExecutingGraph::Edge & ExecutingGraph::addEdge(Edges & edges, Edge edge, const I
     return added_edge;
 }
 
+// 在构建ExeuctingGraph对象之前，会把各个Processor对象准备好，并且通过connect方法，实现Processor之间的连接。
+// 在构建ExecutingGraph对象时，会调用addEdges为ExecutingGraph中的connection创建好对应的Edge对象。
+// 其中每一个connection：连接关系为：OutputPort <-> InputPort
+// 会分别创建一个前向Edge和一个后向Edge。
 bool ExecutingGraph::addEdges(uint64_t node)
 {
     IProcessor * from = nodes[node]->processor;
 
     bool was_edge_added = false;
 
-    /// Add backward edges from input ports.
+    /// Add backward edges from input ports.  添加前向Edge，这里通过
     auto & inputs = from->getInputs();
     auto from_input = nodes[node]->back_edges.size();
 
@@ -61,6 +65,7 @@ bool ExecutingGraph::addEdges(uint64_t node)
         {
             const IProcessor * to = &it->getOutputPort().getProcessor();
             auto output_port_number = to->getOutputPortNumber(&it->getOutputPort());
+            // 后向Edge对象，这里的 to_ 参数是0，后面通过addEdge方法，找到to的编号，在传入对应的成员变量
             Edge edge(0, true, from_input, output_port_number, &nodes[node]->post_updated_input_ports);
             auto & added_edge = addEdge(nodes[node]->back_edges, std::move(edge), from, to);
             it->setUpdateInfo(&added_edge.update_info);
@@ -79,6 +84,7 @@ bool ExecutingGraph::addEdges(uint64_t node)
         {
             const IProcessor * to = &it->getInputPort().getProcessor();
             auto input_port_number = to->getInputPortNumber(&it->getInputPort());
+            // 前向Edge对象，这里的 to_ 参数是0，后面通过addEdge方法，找到to的编号，在传入对应的成员变量
             Edge edge(0, false, input_port_number, from_output, &nodes[node]->post_updated_output_ports);
             auto & added_edge = addEdge(nodes[node]->direct_edges, std::move(edge), from, to);
             it->setUpdateInfo(&added_edge.update_info);
