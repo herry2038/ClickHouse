@@ -751,7 +751,7 @@ MergeTreeRangeReader::ReadResult MergeTreeRangeReader::read(size_t max_rows, Mar
 
     if (read_result.num_rows == 0)
         return read_result;
-
+    
     executePrewhereActionsAndFilterColumns(read_result);
 
     return read_result;

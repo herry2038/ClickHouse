@@ -235,9 +235,9 @@ SinkToStoragePtr StorageScadb::write(const ASTPtr & /*query*/, const StorageMeta
 }
 
 
-StorageScadbConfiguration StorageScadb::getConfiguration(ASTs engine_args, ContextPtr context_)
+StorageMySQLConfiguration StorageScadb::getConfiguration(ASTs engine_args, ContextPtr context_)
 {
-    StorageScadbConfiguration configuration;
+    StorageMySQLConfiguration configuration;
 
     if (auto named_collection = getExternalDataSourceConfiguration(engine_args, context_))
     {
