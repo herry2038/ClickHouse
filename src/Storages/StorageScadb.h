@@ -55,7 +55,7 @@ public:
     static StorageMySQLConfiguration getConfiguration(ASTs engine_args, ContextPtr context_);
 
 private:
-    friend class StorageScasqlSink;
+    friend class StorageScadbSink;
 
     std::string remote_database_name;
     std::string remote_table_name;
