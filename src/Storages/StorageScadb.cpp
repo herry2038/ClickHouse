@@ -293,7 +293,7 @@ StorageScadbConfiguration StorageScadb::getConfiguration(ASTs engine_args, Conte
 
 void registerStorageScadb(StorageFactory & factory)
 {
-    factory.registerStorage("MySQL", [](const StorageFactory::Arguments & args)
+    factory.registerStorage("Scadb", [](const StorageFactory::Arguments & args)
     {
         auto configuration = StorageScadb::getConfiguration(args.engine_args, args.getLocalContext());
 
