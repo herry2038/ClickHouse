@@ -271,12 +271,15 @@ static void fillIndexGranularityImpl(
     for (size_t current_row = index_offset; current_row < rows_in_block; current_row += index_granularity_for_block)
     {
         size_t rows_left_in_block = rows_in_block - current_row;
-
+        
         /// Try to extend last granule if block is large enough
         ///  or it isn't first in granule (index_offset != 0).
         if (rows_left_in_block < index_granularity_for_block &&
             (rows_in_block >= index_granularity_for_block || index_offset != 0))
-        {
+        {            
+            // 最后剩余量不足一个granularity时，会考虑两种情况：
+            // 1. 剩余部分大于等于 granularity的一半，把剩余部分留到最后一个mark
+            // 2. 剩余部分小于 granularity的一半，把剩余部分合并到该granarity，作为最后一个mark
             // If enough rows are left, create a new granule. Otherwise, extend previous granule.
             // So, real size of granule differs from index_granularity_for_block not more than 50%.
             if (rows_left_in_block * 2 >= index_granularity_for_block)

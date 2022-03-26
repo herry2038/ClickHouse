@@ -566,14 +566,14 @@ int32_t ReplicatedMergeTreeQueue::pullLogsToQueue(zkutil::ZooKeeperPtr zookeeper
 
     if (pull_log_blocker.isCancelled())
         throw Exception("Log pulling is cancelled", ErrorCodes::ABORTED);
-
+    // 读取副本目前的处理日志点
     String index_str = zookeeper->get(fs::path(replica_path) / "log_pointer");
     UInt64 index;
 
     /// The version of "/log" is modified when new entries to merge/mutate/drop appear.
     Coordination::Stat stat;
     zookeeper->get(fs::path(zookeeper_path) / "log", &stat);
-
+    // 读取所有的log日志
     Strings log_entries = zookeeper->getChildrenWatch(fs::path(zookeeper_path) / "log", nullptr, watch_callback);
 
     /// We update mutations after we have loaded the list of log entries, but before we insert them
@@ -597,7 +597,7 @@ int32_t ReplicatedMergeTreeQueue::pullLogsToQueue(zkutil::ZooKeeperPtr zookeeper
     String min_log_entry = "log-" + padIndex(index);
 
     /// Multiple log entries that must be copied to the queue.
-
+    // 删除所有小于副本已处理的副本点位的log日志
     log_entries.erase(
         std::remove_if(log_entries.begin(), log_entries.end(), [&min_log_entry](const String & entry) { return entry < min_log_entry; }),
         log_entries.end());
@@ -664,14 +664,14 @@ int32_t ReplicatedMergeTreeQueue::pullLogsToQueue(zkutil::ZooKeeperPtr zookeeper
                     }
                 }
             }
-
+            // 日志点位：当前已处理的 + 1
             ops.emplace_back(zkutil::makeSetRequest(
                 fs::path(replica_path) / "log_pointer", toString(last_entry_index + 1), -1));
 
             if (min_unprocessed_insert_time_changed)
                 ops.emplace_back(zkutil::makeSetRequest(
                     fs::path(replica_path) / "min_unprocessed_insert_time", toString(*min_unprocessed_insert_time_changed), -1));
-
+            // 每次批量操作，按照批次大小批量写zk，保证事务型和效率？？？
             auto responses = zookeeper->multi(ops);
 
             /// Now we have successfully updated the queue in ZooKeeper. Update it in RAM.
@@ -705,7 +705,7 @@ int32_t ReplicatedMergeTreeQueue::pullLogsToQueue(zkutil::ZooKeeperPtr zookeeper
                 merge_strategy_picker.refreshState();
             }
         }
-
+        // 触发后台任务
         storage.background_operations_assignee.trigger();
     }
 
@@ -758,7 +758,7 @@ void ReplicatedMergeTreeQueue::updateMutations(zkutil::ZooKeeperPtr zookeeper, C
     bool some_active_mutations_were_killed = false;
     {
         std::lock_guard state_lock(state_mutex);
-
+        // 注意：mutations_by_partition是在在处理的mutation，这里的逻辑是，如果发现zk中已经没有了，说明它被kill了，要终止它。
         for (auto it = mutations_by_znode.begin(); it != mutations_by_znode.end();)
         {
             const ReplicatedMergeTreeMutationEntry & entry = *it->second.entry;
@@ -797,14 +797,14 @@ void ReplicatedMergeTreeQueue::updateMutations(zkutil::ZooKeeperPtr zookeeper, C
                 entries_to_load.push_back(znode);
         }
     }
-
+    // 有kill操作，需要驱动background_operations_assignee去工作
     if (some_active_mutations_were_killed)
         storage.background_operations_assignee.trigger();
 
     if (!entries_to_load.empty())
     {
         LOG_INFO(log, "Loading {} mutation entries: {} - {}", toString(entries_to_load.size()), entries_to_load.front(), entries_to_load.back());
-
+        // 读取zk节点中的mutation日志，解析成ReplicatedMergeTreeMutationEntry后，放入new_mutations列表
         std::vector<std::future<Coordination::GetResponse>> futures;
         for (const String & entry : entries_to_load)
             futures.emplace_back(zookeeper->asyncTryGet(fs::path(zookeeper_path) / "mutations" / entry));
@@ -828,7 +828,7 @@ void ReplicatedMergeTreeQueue::updateMutations(zkutil::ZooKeeperPtr zookeeper, C
         bool some_mutations_are_probably_done = false;
         {
             std::lock_guard state_lock(state_mutex);
-
+            // 从new_mutations转到mutations_by_partition中，该内存中的数据，会驱动生成log日志
             for (const ReplicatedMergeTreeMutationEntryPtr & entry : new_mutations)
             {
                 auto & mutation = mutations_by_znode.emplace(entry->znode_name, MutationStatus(entry, format_version))
@@ -842,14 +842,15 @@ void ReplicatedMergeTreeQueue::updateMutations(zkutil::ZooKeeperPtr zookeeper, C
                     LOG_TRACE(log, "Adding mutation {} for partition {} for all block numbers less than {}", entry->znode_name, partition_id, block_num);
                 }
 
+                // 1. 从当前的dataparts中找合适的dataparts。getPartNamesToMutate会查询 [0-block_num)范围内的所有的dataparts。
                 /// Initialize `mutation.parts_to_do`. First we need to mutate all parts in `current_parts`.
                 Strings current_parts_to_mutate = getPartNamesToMutate(*entry, current_parts, drop_ranges);
                 for (const String & current_part_to_mutate : current_parts_to_mutate)
                 {
                     assert(MergeTreePartInfo::fromPartName(current_part_to_mutate, format_version).level < MergeTreePartInfo::MAX_LEVEL);
-                    mutation.parts_to_do.add(current_part_to_mutate);
+                    mutation.parts_to_do.add(current_part_to_mutate);   // 把需要mutate的datapart添加到mutation.parts_to_do
                 }
-
+                // 2. 从queue中找出dataversion小于mutaition操作的block number，添加到mutation.parts_to_do
                 /// And next we would need to mutate all parts with getDataVersion() greater than
                 /// mutation block number that would appear as a result of executing the queue.
                 for (const auto & queue_entry : queue)
@@ -870,10 +871,10 @@ void ReplicatedMergeTreeQueue::updateMutations(zkutil::ZooKeeperPtr zookeeper, C
                             mutation.parts_to_do.add(produced_part_name);
                     }
                 }
-
+                // 如果这时候，发现mutation中的parts_to_do为空，说明该mutation可能已经完成，可以驱动mutations_finalizing_task，见最后一行代码。
                 if (mutation.parts_to_do.size() == 0)
                 {
-                    some_mutations_are_probably_done = true;
+                    some_mutations_are_probably_done = true;  
                 }
 
                 /// otherwise it's already done
@@ -884,7 +885,7 @@ void ReplicatedMergeTreeQueue::updateMutations(zkutil::ZooKeeperPtr zookeeper, C
                 }
             }
         }
-
+        // 驱动Mutation的Log日志生成
         storage.merge_selecting_task->schedule();
 
         if (some_mutations_are_probably_done)
@@ -2177,15 +2178,19 @@ std::optional<std::pair<Int64, int>> ReplicatedMergeTreeMergePredicate::getDesir
         return {};
 
     std::lock_guard lock(queue.state_mutex);
-
+    // 当前part是否在virtual_parts中
     if (queue.virtual_parts.getContainingPart(part->info) != part->name)
         return {};
-
+    // 找到所有的mutation，这里跟zk中的数据对应，完成的MUTATION也在这里
     auto in_partition = queue.mutations_by_partition.find(part->info.partition_id);
     if (in_partition == queue.mutations_by_partition.end())
         return {};
-
+    // 根据datapart信息，找到当前的Mutation版本（可能是已经在该datapart上执行过的mutation version）
+    // 例如：202112_0_5_1_18，那么当前的DataVersion应该是18。然后根据18，寻找upper_bound后，再后
+    // ["202112"] = { 15 -> mutationStatus, 18->mutationStatus, *19->MutationStatus} ，在这里找，就能找到18为current_version。
+    // ["202112"] = { 15 -> mutationStatus, 17->mutationStatus, *19->MutationStatus} ，在这里找，就能找到17为current_version。
     Int64 current_version = queue.getCurrentMutationVersionImpl(part->info.partition_id, part->info.getDataVersion(), lock);
+    // 当前所有mutation中最大的mutation：系统查询到为19
     Int64 max_version = in_partition->second.rbegin()->first;
 
     int alter_version = -1;

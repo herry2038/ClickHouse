@@ -176,8 +176,8 @@ void MergeTreeDataPartWriterOnDisk::calculateAndSerializePrimaryIndex(const Bloc
         index_types = primary_index_block.getDataTypes();
         index_columns.resize(primary_columns_num);
         last_block_index_columns.resize(primary_columns_num);
-        for (size_t i = 0; i < primary_columns_num; ++i)
-            index_columns[i] = primary_index_block.getByPosition(i).column->cloneEmpty();
+        for (size_t i = 0; i < primary_columns_num; ++i) // 生成空的columns，后续插入每个granule中的行，形成稀疏索引
+            index_columns[i] = primary_index_block.getByPosition(i).column->cloneEmpty();  
     }
 
     {
@@ -197,8 +197,8 @@ void MergeTreeDataPartWriterOnDisk::calculateAndSerializePrimaryIndex(const Bloc
                 for (size_t j = 0; j < primary_columns_num; ++j)
                 {
                     const auto & primary_column = primary_index_block.getByPosition(j);
-                    index_columns[j]->insertFrom(*primary_column.column, granule.start_row);
-                    primary_column.type->getDefaultSerialization()->serializeBinary(*primary_column.column, granule.start_row, *index_stream);
+                    index_columns[j]->insertFrom(*primary_column.column, granule.start_row); // 插入每个granule中的起始行，形成稀疏索引
+                    primary_column.type->getDefaultSerialization()->serializeBinary(*primary_column.column, granule.start_row, *index_stream); // 写入索引文件
                 }
             }
         }

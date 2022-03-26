@@ -162,6 +162,7 @@ BlocksWithPartition MergeTreeDataWriter::splitBlockIntoParts(
         partition_columns.emplace_back(block_copy.getByName(element.name).column.get());
 
     PODArray<size_t> partition_num_to_first_row;
+    // 给每一行，选出合适的不同的分区
     IColumn::Selector selector;
     buildScatterSelector(partition_columns, partition_num_to_first_row, selector, max_parts);
 
@@ -190,6 +191,7 @@ BlocksWithPartition MergeTreeDataWriter::splitBlockIntoParts(
 
     for (size_t col = 0; col < block.columns(); ++col)
     {
+        // 把数据按列分好，放到对应的分区块
         MutableColumns scattered = block.getByPosition(col).column->scatter(partitions_count, selector);
         for (size_t i = 0; i < partitions_count; ++i)
             result[i].block.getByPosition(col).column = std::move(scattered[i]);

@@ -337,13 +337,15 @@ void MergeTreeDataPartWriterWide::writeColumn(
 
     if (inserted)
     {
-        ISerialization::SerializeBinaryBulkSettings serialize_settings;
+        ISerialization::SerializeBinaryBulkSettings serialize_settings;        
         serialize_settings.getter = createStreamGetter(name_and_type, offset_columns);
         serializations[name]->serializeBinaryBulkStatePrefix(serialize_settings, it->second);
     }
 
     const auto & global_settings = storage.getContext()->getSettingsRef();
+    // 这里有一个关键是serialize_settings，这个会被后面的的方法writeSingleGranule用到
     ISerialization::SerializeBinaryBulkSettings serialize_settings;
+    // 这里封装了对应的写buffer，对应到Stream的compressed的成员。用于在写一个Granule时被用到。
     serialize_settings.getter = createStreamGetter(name_and_type, offset_columns);
     serialize_settings.low_cardinality_max_dictionary_size = global_settings.low_cardinality_max_dictionary_size;
     serialize_settings.low_cardinality_use_single_dictionary_for_part = global_settings.low_cardinality_use_single_dictionary_for_part != 0;
@@ -351,14 +353,20 @@ void MergeTreeDataPartWriterWide::writeColumn(
     for (const auto & granule : granules)
     {
         data_written = true;
-
+        // 不一定需要写granule的开始到mark文件，因为有些granule是上一个granule的接续。
+        // 多数情况下，mark_on_start为TRUE
         if (granule.mark_on_start)
         {
             if (last_non_written_marks.count(name))
                 throw Exception(ErrorCodes::LOGICAL_ERROR, "We have to add new mark for column, but already have non written mark. Current mark {}, total marks {}, offset {}", getCurrentMark(), index_granularity.getMarksCount(), rows_written_in_last_mark);
+            // 在这里mark中获取到压缩文件中的块的起始位置和非压缩块的偏移量。
+            // TODO： 但是在getCurrentMarksForColumn中似乎会调用如下的代码 
+            // if (stream.compressed.offset() >= settings.min_compress_block_size)
+            //     stream.compressed.next();          
+            // 那么这里会产生新的压缩块，那么一个mark就会跨越多个压缩块。这里我就不太理解了。后续有空再研究吧。
             last_non_written_marks[name] = getCurrentMarksForColumn(name_and_type, offset_columns, serialize_settings.path);
         }
-
+        // 序列化写一个Granule到buffer中，这里会驱动数据流：compressed -> compressed_buf -> plain_hashing -> plain_file
         writeSingleGranule(
            name_and_type,
            column,
@@ -367,13 +375,13 @@ void MergeTreeDataPartWriterWide::writeColumn(
            serialize_settings,
            granule
         );
-
+        // 绝大多数情况下：is_complete为true，只有当最后一个block时，有可能数据不够mark量。这里也有点不理解，什么情况下会是这种可能，这里应该是跟mark_on_start衔接的。
         if (granule.is_complete)
         {
             auto marks_it = last_non_written_marks.find(name);
             if (marks_it == last_non_written_marks.end())
                 throw Exception(ErrorCodes::LOGICAL_ERROR, "No mark was saved for incomplete granule for column {}", backQuoteIfNeed(name));
-
+            
             for (const auto & mark : marks_it->second)
                 flushMarkToFile(mark, index_granularity.getMarkRows(granule.mark_number));
             last_non_written_marks.erase(marks_it);

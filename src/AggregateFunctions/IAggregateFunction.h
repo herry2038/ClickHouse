@@ -114,11 +114,15 @@ public:
      *  row_num is number of row which should be added.
      *  Additional parameter arena should be used instead of standard memory allocator if the addition requires memory allocation.
      */
+    // 最为核心的调用接口，将对应AggregateDataPtr指针之中数据取出，与列columns中的第row_num的数据进行对应的聚合计算。
+    // (这里可以看到ClickHouse是一个纯粹的列式存储数据库，所有的操作都是基于列的数据结构。
     virtual void add(AggregateDataPtr __restrict place, const IColumn ** columns, size_t row_num, Arena * arena) const = 0;
 
     /// Merges state (on which place points to) with other state of current aggregation function.
+    // 将两个聚合结果进行合并的函数，通常用在并发执行聚合函数的过程之中，需要将对应的聚合结果进行合并。
     virtual void merge(AggregateDataPtr __restrict place, ConstAggregateDataPtr rhs, Arena * arena) const = 0;
 
+    // serialize函数与deserialize函数：序列化与反序列化的函数，通常用于spill to disk或分布式场景需要保存或传输中间结果的。
     /// Serializes state (to transmit it over the network, for example).
     virtual void serialize(ConstAggregateDataPtr __restrict place, WriteBuffer & buf) const = 0;
 
@@ -163,6 +167,9 @@ public:
       */
     using AddFunc = void (*)(const IAggregateFunction *, AggregateDataPtr, const IColumn **, size_t, Arena *);
     virtual AddFunc getAddressOfAddFunction() const = 0;
+
+    // addBatch函数：这是函数也是非常重要的，虽然它仅仅实现了一个for循环调用add函数。它通过这样的方式来减少虚函数的调用次数，并且增加了编译器内联的概率。
+    // （虚函数的调用需要一次访存指令，一次查表，最终才能定位到需要调用的函数上，这在传统的火山模型的实现上会带来极大的CPU开销。）
 
     /** Contains a loop with calls to "add" function. You can collect arguments into array "places"
       *  and do a single call to "addBatch" for devirtualization and inlining.

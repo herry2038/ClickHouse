@@ -119,13 +119,14 @@ void MergeTreeDataPartWide::loadIndexGranularity()
 
     size_t marks_file_size = volume->getDisk()->getFileSize(marks_file_path);
 
+    // 固定行数，这种granularity建个完全相同，（下一个索引）-（上一个索引位置）是定值。看起来代码中都不需要读文件了。
     if (!index_granularity_info.is_adaptive)
     {
         size_t marks_count = marks_file_size / index_granularity_info.getMarkSizeInBytes();
         index_granularity.resizeWithFixedGranularity(marks_count, index_granularity_info.fixed_index_granularity); /// all the same
     }
-    else
-    {
+    else 
+    {   // 可根据字节数调节
         auto buffer = volume->getDisk()->readFile(marks_file_path, ReadSettings().adjustBufferSize(marks_file_size), marks_file_size);
         while (!buffer->eof())
         {

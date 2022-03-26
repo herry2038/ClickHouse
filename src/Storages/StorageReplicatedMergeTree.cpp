@@ -3039,7 +3039,7 @@ void StorageReplicatedMergeTree::mergeSelectingTask()
         std::lock_guard merge_selecting_lock(merge_selecting_mutex);
 
         auto zookeeper = getZooKeeper();
-
+        // MergePred判断器，根据queue中的数据生成，mutation部分也在这里了
         ReplicatedMergeTreeMergePredicate merge_pred = queue.getMergePredicate(zookeeper);
 
         /// If many merges is already queued, then will queue only small enough merges.
@@ -3090,16 +3090,19 @@ void StorageReplicatedMergeTree::mergeSelectingTask()
                      && merges_and_mutations_queued.mutations < storage_settings_ptr->max_replicated_mutations_in_queue)
             {
                 /// Choose a part to mutate.
+                // 找出所有当前的data_parts，目前看起来是找出虚拟的data_parts，根据现有的data_parts应用到log_pointer之后的data_parts
                 DataPartsVector data_parts = getDataPartsVector();
                 for (const auto & part : data_parts)
                 {
+                    // 这里先判一下该分区所在磁盘空间是否超过修改的源part所需空间。（这里有个Trick，如果当前merge太多时，max_source_part_size_for_mutation为0）
+                    // 变相的控制了mutation的执行。
                     if (part->getBytesOnDisk() > max_source_part_size_for_mutation)
                         continue;
-
+                    // 找到当前数据的最大版本，以及变更版本，可以为空，为空时，说明该datapart不需要MUTATE
                     std::optional<std::pair<Int64, int>> desired_mutation_version = merge_pred.getDesiredMutationVersion(part);
                     if (!desired_mutation_version)
                         continue;
-
+                    // 生成log日志
                     create_result = createLogEntryToMutatePart(
                         *part,
                         future_merged_part->uuid,
