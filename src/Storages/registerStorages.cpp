@@ -113,6 +113,7 @@ void registerStorages()
     registerStorageMySQL(factory);
     #endif
 
+    registerStorageScadb(factory);
     registerStorageMongoDB(factory);
 
     #if USE_RDKAFKA
