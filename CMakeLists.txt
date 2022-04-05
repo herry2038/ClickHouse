@@ -447,6 +447,7 @@ if (UNBUNDLED)
 else ()
     set(NOT_UNBUNDLED ON)
 endif ()
+message (WARNING "submodule UNBUNDLED is ${UNBUNDLED}, NOT_UNBUNDLED is ${NOT_UNBUNDLED}")
 
 if (UNBUNDLED OR NOT (OS_LINUX OR OS_DARWIN))
     # Using system libs can cause a lot of warnings in includes (on macro expansion).
@@ -580,6 +581,7 @@ include (cmake/find/s2geometry.cmake)
 include (cmake/find/nlp.cmake)
 include (cmake/find/bzip2.cmake)
 include (cmake/find/filelog.cmake)
+include (cmake/find/cpprestsdk.cmake)
 
 if(NOT USE_INTERNAL_PARQUET_LIBRARY)
     set (ENABLE_ORC OFF CACHE INTERNAL "")

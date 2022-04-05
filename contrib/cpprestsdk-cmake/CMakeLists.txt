@@ -41,6 +41,9 @@ set(SOURCES
   ${LIBRARY_DIR}/src/utilities/web_utilities.cpp
 )
 
+message(STATUS "In cpprestsdk , BUILD_SHARED_LIBS is ${BUILD_SHARED_LIBS}")
+
+
 add_library(cpprest ${SOURCES})
 target_include_directories(cpprest
   PUBLIC

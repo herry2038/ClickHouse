@@ -105,7 +105,8 @@ function(protobuf_generate_grpc)
 
   if(NOT protobuf_generate_grpc_GENERATE_EXTENSIONS)
     if(protobuf_generate_grpc_LANGUAGE STREQUAL cpp)
-      set(protobuf_generate_grpc_GENERATE_EXTENSIONS .pb.h .pb.cc .grpc.pb.h .grpc.pb.cc)
+      set(protobuf_generate_grpc_GENERATE_EXTENSIONS .pb.h .pb.cc .grpc.pb.h .grpc.pb.cc) # 发现这样，会生成规则出错，因为之前已经生成protobuf,能够让etcd-cpp happy，有其他问题再说
+      #set(protobuf_generate_grpc_GENERATE_EXTENSIONS .grpc.pb.h .grpc.pb.cc)
     elseif(protobuf_generate_grpc_LANGUAGE STREQUAL python)
       set(protobuf_generate_grpc_GENERATE_EXTENSIONS _pb2.py)
     else()

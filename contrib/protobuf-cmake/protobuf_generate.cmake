@@ -32,6 +32,8 @@ function(PROTOBUF_GENERATE_CPP SRCS HDRS)
     set(_append_arg APPEND_PATH)
   endif()
 
+  #message(STATUS "PROTOBUF_GENERATE_CPP_APPEND_PATH  ${PROTOBUF_GENERATE_CPP_APPEND_PATH}, APPEND_PATH: ${APPEND_PATH}")
+
   if(protobuf_generate_cpp_DESCRIPTORS)
     set(_descriptors DESCRIPTORS)
   endif()
@@ -161,15 +163,17 @@ function(protobuf_generate)
     get_filename_component(_abs_dir ${_abs_file} DIRECTORY)
     get_filename_component(_basename ${_proto} NAME_WE)
     file(RELATIVE_PATH _rel_dir ${CMAKE_CURRENT_SOURCE_DIR} ${_abs_dir})
-
+    
     set(_possible_rel_dir)
     if (NOT protobuf_generate_APPEND_PATH)
         set(_possible_rel_dir ${_rel_dir}/)
     endif()
+    #message(STATUS "Gen ProtoBuf For ${_proto} Get ABSFILE: ${_abs_file}, ABSDIR:${_abs_dir},BASENAME: ${_basename}, RELDIR: ${_rel_dir} POSSIBLE_REL_DIR: ${_possible_rel_dir}")
 
     set(_generated_srcs)
     foreach(_ext ${protobuf_generate_GENERATE_EXTENSIONS})
       list(APPEND _generated_srcs "${protobuf_generate_PROTOC_OUT_DIR}/${_possible_rel_dir}${_basename}${_ext}")
+      #message(STATUS "With EXT: ${_ext} Generate SRC: ${protobuf_generate_PROTOC_OUT_DIR}/${_possible_rel_dir}${_basename}${_ext}")
     endforeach()
 
     if(protobuf_generate_DESCRIPTORS AND protobuf_generate_LANGUAGE STREQUAL cpp)
