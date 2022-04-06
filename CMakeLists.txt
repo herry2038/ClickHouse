@@ -582,6 +582,7 @@ include (cmake/find/nlp.cmake)
 include (cmake/find/bzip2.cmake)
 include (cmake/find/filelog.cmake)
 include (cmake/find/cpprestsdk.cmake)
+include (cmake/find/cpp-etcd-api.cmake)
 
 if(NOT USE_INTERNAL_PARQUET_LIBRARY)
     set (ENABLE_ORC OFF CACHE INTERNAL "")

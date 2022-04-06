@@ -5,7 +5,9 @@
 #define CDB_INFO_PATH  "/scasql/admin/cdb"
 #define SCASAL_BUSINESS_PATH "/scasql/businesses/"
 
-class ScadbMetadata 
+#define CDB_ADDRESS "cdboffline.dbms.self.yydevops.com"
+
+class ScadbMetadata
 {
 public:
     explicit ScadbMetadata(
@@ -25,10 +27,9 @@ private:
     const std::string   database;
     const std::string   table;
 // Real Metadata
-    std::map<std::string, std::string> cdbs;
+    //std::map<std::string, std::string> cdbs;
     std::vector<std::string>           backends;
     ScadbTable          tableMeta;
-
 };
 
 

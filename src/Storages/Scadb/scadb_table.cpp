@@ -1,8 +1,12 @@
 #include "scadb_table.h"
-#include <boost/property_tree/ptree.hpp>
-#include <boost/property_tree/json_parser.hpp>
-#include <boost/json.hpp>
+//#include <boost/property_tree/ptree.hpp>
+//#include <boost/property_tree/json_parser.hpp>
+//#include <boost/json.hpp>
 #include <boost/foreach.hpp>
+#include <Poco/JSON/JSON.h>
+#include <Poco/JSON/Parser.h>
+#include <Poco/Dynamic/Var.h>
+
 #include <iostream>
 #include <sstream>
 
@@ -19,11 +23,41 @@ std::vector<std::string> split(const std::string& s, char delimiter)
    return tokens;
 }
 
+/*
 std::string boost_json_string_to_std_string(const boost::json::string& str)
 {
     return std::string (str.c_str(), str.size()) ;
     
 }
+std::string GetValue(Poco::JSON::Object::Ptr aoJsonObject, const char *aszKey) {
+    Poco::Dynamic::Var loVariable;
+    string lsReturn;
+    string lsKey(aszKey);
+
+    // Get the member Variable    
+    loVariable = aoJsonObject->get(lsKey);    
+
+    // Get the Value from the Variable
+    //
+    lsReturn = loVariable.convert<std::string>();
+
+    return lsReturn;
+}
+
+int GetValueInt(Poco::JSON::Object::Ptr aoJsonObject, const char *aszKey) {
+    Poco::Dynamic::Var loVariable;
+    int lsReturn;
+    string lsKey(aszKey);
+
+    // Get the member Variable    
+    loVariable = aoJsonObject->get(lsKey);    
+
+    // Get the Value from the Variable
+    //
+    lsReturn = loVariable.convert<int>();
+    return lsReturn;
+}
+*/
 
 
 void ScadbTable::print() 
@@ -44,6 +78,7 @@ void ScadbTable::print()
     }
 }
 
+
 void ScadbTable::load(const std::string& tableConfig) 
 {
     // std::stringstream ss ;
@@ -51,38 +86,42 @@ void ScadbTable::load(const std::string& tableConfig)
     // boost::property_tree::ptree pt ;
     // boost::property_tree::read_json(ss, pt);    
     //print(pt);
-    boost::json::error_code ec;
-    auto decode_val = boost::json::parse(tableConfig, ec);
+    //boost::json::error_code ec;
+    //auto decode_val = boost::json::parse(tableConfig, ec);
     
-    if ( ec.failed() ) {
-        std::cout << "parse tableConfig：" << tableConfig << " failed: <" << ec.message() << std::endl;        
-        throw std::runtime_error("parse tableConfig：" + tableConfig + " failed: <" + ec.message());
-    }
-    
-    auto& jo = decode_val.as_object();
-    
-    name = boost_json_string_to_std_string(jo.at("name").as_string());
-    
-    slots = jo.at("slots-readonly").as_int64();
-    
-    blocks = jo.at("blocks-readonly").as_int64();
-    
-    shardType = boost_json_string_to_std_string(jo.at("shardtype").as_string()) ;
-    
-    shardKey = boost_json_string_to_std_string(jo.at("shardkey").as_string()) ;
-    //shardKeyType = jo.at("shardKeyType").as_int64(); 
-     
-    auto& pc = jo.at("partitions").as_array() ;
-    for ( auto &p: pc ) {
-        ScadbPartitionConfig c ;
+    try {
+        Poco::JSON::Parser loParser;
+        Poco::Dynamic::Var loParsedJson = loParser.parse(tableConfig);
         
-        c.table = boost_json_string_to_std_string(p.at("table").as_string());
-        c.segment = boost_json_string_to_std_string(p.at("segment").as_string());
-        c.listValue = boost_json_string_to_std_string(p.at("listvalue").as_string());
-        c.backend = boost_json_string_to_std_string(p.at("backend").as_string());
-        partitionsConfig.push_back(c);
-    } 
-    buildSegments() ;
+        // if ( ec.failed() ) {
+        //     std::cout << "parse tableConfig：" << tableConfig << " failed: <" << ec.message() << std::endl;        
+        //     throw std::runtime_error("parse tableConfig：" + tableConfig + " failed: <" + ec.message());
+        // }
+        
+        Poco::JSON::Object::Ptr result = loParsedJson.extract<Poco::JSON::Object::Ptr>();
+
+        name = result->getValue<std::string>("name") ;
+        slots = result->getValue<int>("slots-readonly");
+        blocks = result->getValue<int>("blocks-readonly") ;
+        shardType = result->getValue<std::string>("shardtype") ;
+        shardKey = result->getValue<std::string>("shardkey") ;
+        Poco::JSON::Array::Ptr ps = result->getArray("partitions") ;  
+        
+        
+        for (std::size_t i=0 ;i< ps->size(); i++) {
+            Poco::JSON::Object::Ptr p = ps->getObject(i) ;
+            ScadbPartitionConfig c ;                        
+            c.table = p->getValue<std::string>("table");
+            c.segment = p->getValue<std::string>("segment");
+            c.listValue = p->getValue<std::string>("listvalue");
+            c.backend = p->getValue<std::string>("backend");
+            partitionsConfig.push_back(c);
+        } 
+        buildSegments() ;
+    } catch (std::exception& ex) {
+        std::cout << "parse tableConfig：" << tableConfig << " failed: <" << ex.what() << std::endl;        
+        throw std::runtime_error("parse tableConfig：" + tableConfig + " failed: <" + ex.what());
+    }
 }
 
 
