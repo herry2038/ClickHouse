@@ -9,6 +9,7 @@
 #include <Storages/MySQL/MySQLSettings.h>
 #include <Storages/ExternalDataSourceConfiguration.h>
 #include <mysqlxx/PoolWithFailover.h>
+#include <Storages/Scadb/scadb_metadata.h>
 
 namespace Poco
 {
@@ -27,10 +28,10 @@ class StorageScadb final : public shared_ptr_helper<StorageScadb>, public IStora
     friend struct shared_ptr_helper<StorageScadb>;
 public:
     StorageScadb(
-        const StorageID & table_id_,
-        mysqlxx::PoolWithFailover && pool_,
-        const std::string & remote_database_name_,
-        const std::string & remote_table_name_,
+        const StorageID & table_id_,        
+        ScadbMetadata &&scadbMetadata_,
+        //const std::string & remote_database_name_,
+        //const std::string & remote_table_name_,
         bool replace_query_,
         const std::string & on_duplicate_clause_,
         const ColumnsDescription & columns_,
@@ -56,15 +57,15 @@ public:
 
 private:
     friend class StorageScadbSink;
-
-    std::string remote_database_name;
-    std::string remote_table_name;
+    
+    std::shared_ptr<ScadbMetadata> metadata_ ;
+    //std::string remote_database_name;
+    //std::string remote_table_name;
     bool replace_query;
     std::string on_duplicate_clause;
 
     MySQLSettings mysql_settings;
-
-    mysqlxx::PoolWithFailoverPtr pool;
+    //mysqlxx::PoolWithFailoverPtr pool;
 
     Poco::Logger * log;
 };

@@ -42,9 +42,9 @@ static String backQuoteMySQL(const String & x)
 
 StorageScadb::StorageScadb(
     const StorageID & table_id_,
-    mysqlxx::PoolWithFailover && pool_,
-    const std::string & remote_database_name_,
-    const std::string & remote_table_name_,
+    ScadbMetadata &&scadbMetadata_,
+    //const std::string & remote_database_name_,
+    //const std::string & remote_table_name_,
     const bool replace_query_,
     const std::string & on_duplicate_clause_,
     const ColumnsDescription & columns_,
@@ -54,12 +54,12 @@ StorageScadb::StorageScadb(
     const MySQLSettings & mysql_settings_)
     : IStorage(table_id_)
     , WithContext(context_->getGlobalContext())
-    , remote_database_name(remote_database_name_)
-    , remote_table_name(remote_table_name_)
+    //, remote_database_name(remote_database_name_)
+    //, remote_table_name(remote_table_name_)
+    , metadata_(std::make_shared<ScadbMetadata>(scadbMetadata_))
     , replace_query{replace_query_}
-    , on_duplicate_clause{on_duplicate_clause_}
+    , on_duplicate_clause{on_duplicate_clause_}        
     , mysql_settings(mysql_settings_)
-    , pool(std::make_shared<mysqlxx::PoolWithFailover>(pool_))
     , log(&Poco::Logger::get("StorageScadb (" + table_id_.table_name + ")"))
 {
     StorageInMemoryMetadata storage_metadata;
@@ -80,13 +80,29 @@ Pipe StorageScadb::read(
     unsigned)
 {
     metadata_snapshot->check(column_names_, getVirtuals(), getStorageID());
+    
+    for (auto& pc : metadata_->getMetadata().partitions) {        
+        auto& segment = pc.second ;
+        String query = transformQueryForExternalDatabase(
+                query_info_,
+                metadata_snapshot->getColumns().getOrdinary(),
+                IdentifierQuotingStyle::BackticksMySQL,
+                metadata_->getDatabase(),
+                //metadata_->getPartitionTable(partitionId),
+                segment.table,
+                context_);
+        LOG_TRACE(log, "Query: {}", query);
+    }
+    
+    auto& segment = metadata_->getMetadata().partitions.at(0);
     String query = transformQueryForExternalDatabase(
-        query_info_,
-        metadata_snapshot->getColumns().getOrdinary(),
-        IdentifierQuotingStyle::BackticksMySQL,
-        remote_database_name,
-        remote_table_name,
-        context_);
+            query_info_,
+            metadata_snapshot->getColumns().getOrdinary(),
+            IdentifierQuotingStyle::BackticksMySQL,
+            metadata_->getDatabase(),
+            //metadata_->getPartitionTable(partitionId),
+            segment.table,
+            context_);    
     LOG_TRACE(log, "Query: {}", query);
 
     Block sample_block;
@@ -101,7 +117,7 @@ Pipe StorageScadb::read(
         sample_block.insert({ column_data.type, column_data.name });
     }
 
-
+    mysqlxx::PoolWithFailoverPtr pool = metadata_->getPool(segment.backend);
     StreamSettings mysql_input_stream_settings(context_->getSettingsRef(),
         mysql_settings.connection_auto_close);
     return Pipe(std::make_shared<MySQLWithFailoverSource>(pool, query, sample_block, mysql_input_stream_settings));
@@ -228,9 +244,10 @@ SinkToStoragePtr StorageScadb::write(const ASTPtr & /*query*/, const StorageMeta
     return std::make_shared<StorageScadbSink>(
         *this,
         metadata_snapshot,
-        remote_database_name,
-        remote_table_name,
-        pool->get(),
+        metadata_->getDatabase(),
+        metadata_->getTable(),
+        //pool->get(), 
+        mysqlxx::PoolWithFailover::Entry(),  //只为让编译通过
         local_context->getSettingsRef().mysql_max_rows_to_insert);
 }
 
@@ -291,8 +308,15 @@ StorageMySQLConfiguration StorageScadb::getConfiguration(ASTs engine_args, Conte
 }
 
 
+std::unique_ptr<etcd::Client> etcdGlobalClient_ ;
+
+
 void registerStorageScadb(StorageFactory & factory)
 {
+    if ( !etcdGlobalClient_.get() ) {
+        etcdGlobalClient_.reset(new etcd::Client("http://127.0.0.1:2379"));
+    }
+
     factory.registerStorage("Scadb", [](const StorageFactory::Arguments & args)
     {
         auto configuration = StorageScadb::getConfiguration(args.engine_args, args.getLocalContext());
@@ -303,7 +327,10 @@ void registerStorageScadb(StorageFactory & factory)
 
         if (!mysql_settings.connection_pool_size)
             throw Exception("connection_pool_size cannot be zero.", ErrorCodes::BAD_ARGUMENTS);
-
+        
+        ScadbMetadata metadata(mysql_settings, etcdGlobalClient_.get(), "online_test", configuration.database, configuration.table);
+        metadata.load() ;
+        /*
         mysqlxx::PoolWithFailover pool(
             configuration.database, configuration.addresses,
             configuration.username, configuration.password,
@@ -311,12 +338,12 @@ void registerStorageScadb(StorageFactory & factory)
             mysql_settings.connection_pool_size,
             mysql_settings.connection_max_tries,
             mysql_settings.connection_wait_timeout);
-
+        */
         return StorageScadb::create(
             args.table_id,
-            std::move(pool),
-            configuration.database,
-            configuration.table,
+            std::move(metadata),
+            //configuration.database,
+            //configuration.table,
             configuration.replace_query,
             configuration.on_duplicate_clause,
             args.columns,
