@@ -214,7 +214,8 @@ add_object_library(clickhouse_storages Storages)
 add_object_library(clickhouse_storages_mysql Storages/MySQL)
 ### Scadb added!!!
 add_object_library(clickhouse_storages_scadb Storages/Scadb)
-target_link_libraries(clickhouse_storages_scadb PUBLIC ${ETCD_CPP_API_LIBRARY})
+#target_include_directories(clickhouse_storages_scadb SYSTEM BEFORE PUBLIC ${ETCD_CPP_API_INCLUDE_DIR})
+#target_link_libraries(clickhouse_storages_scadb PUBLIC ${ETCD_CPP_API_LIBRARY})
 add_object_library(clickhouse_storages_distributed Storages/Distributed)
 add_object_library(clickhouse_storages_mergetree Storages/MergeTree)
 add_object_library(clickhouse_storages_liveview Storages/LiveView)
@@ -454,6 +455,11 @@ if (USE_HDFS)
     dbms_target_link_libraries(PRIVATE ${HDFS3_LIBRARY})
     dbms_target_include_directories (SYSTEM BEFORE PUBLIC ${HDFS3_INCLUDE_DIR})
 endif()
+
+
+##### Scadb ETCD API
+dbms_target_include_directories (SYSTEM BEFORE PUBLIC ${ETCD_CPP_API_INCLUDE_DIR})
+dbms_target_link_libraries(PUBLIC ${ETCD_CPP_API_LIBRARY})
 
 if (USE_AWS_S3)
     target_link_libraries (clickhouse_common_io PUBLIC ${AWS_S3_LIBRARY})

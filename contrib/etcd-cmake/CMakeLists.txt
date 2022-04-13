@@ -37,7 +37,7 @@ target_link_libraries(etcd-cpp-api PUBLIC
                       ${gRPC_LIBRARIES})
 
 target_include_directories(etcd-cpp-api PRIVATE ${CMAKE_CURRENT_BINARY_DIR}/../gen ${CMAKE_CURRENT_BINARY_DIR})
-target_include_directories(etcd-cpp-api PRIVATE ${CMAKE_CURRENT_BINARY_DIR}/../gen/proto)
+target_include_directories(etcd-cpp-api PRIVATE ${CMAKE_CURRENT_BINARY_DIR}/proto)
 target_include_directories(etcd-cpp-api PRIVATE ${gRPC_INCLUDE_DIRS} ${Protobuf_INCLUDE_DIR})
 target_include_directories(etcd-cpp-api PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/..)
 

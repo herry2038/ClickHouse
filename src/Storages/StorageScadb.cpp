@@ -314,7 +314,7 @@ std::unique_ptr<etcd::Client> etcdGlobalClient_ ;
 void registerStorageScadb(StorageFactory & factory)
 {
     if ( !etcdGlobalClient_.get() ) {
-        etcdGlobalClient_.reset(new etcd::Client("http://127.0.0.1:2379"));
+        etcdGlobalClient_.reset(new etcd::Client("http://herrypc:2379"));
     }
 
     factory.registerStorage("Scadb", [](const StorageFactory::Arguments & args)
