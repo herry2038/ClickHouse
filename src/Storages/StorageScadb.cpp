@@ -81,6 +81,20 @@ Pipe StorageScadb::read(
 {
     metadata_snapshot->check(column_names_, getVirtuals(), getStorageID());
     
+    Pipes pipes;
+
+    Block sample_block;
+    for (const String & column_name : column_names_)
+    {
+        auto column_data = metadata_snapshot->getColumns().getPhysical(column_name);
+
+        WhichDataType which(column_data.type);
+        /// Convert enum to string.
+        if (which.isEnum())
+            column_data.type = std::make_shared<DataTypeString>();
+        sample_block.insert({ column_data.type, column_data.name });
+    }
+
     for (auto& pc : metadata_->getMetadata().partitions) {        
         auto& segment = pc.second ;
         String query = transformQueryForExternalDatabase(
@@ -92,8 +106,15 @@ Pipe StorageScadb::read(
                 segment.table,
                 context_);
         LOG_TRACE(log, "Query: {}", query);
+        if ( segment.backend == "backend2" )
+            continue ;
+        mysqlxx::PoolWithFailoverPtr pool = metadata_->getPool(segment.backend);
+        StreamSettings mysql_input_stream_settings(context_->getSettingsRef(),
+            mysql_settings.connection_auto_close);
+        auto source = std::make_shared<MySQLWithFailoverSource>(pool, query, sample_block, mysql_input_stream_settings);
+        pipes.emplace_back(source);
     }
-    
+    /*
     auto& segment = metadata_->getMetadata().partitions.at(0);
     String query = transformQueryForExternalDatabase(
             query_info_,
@@ -121,6 +142,8 @@ Pipe StorageScadb::read(
     StreamSettings mysql_input_stream_settings(context_->getSettingsRef(),
         mysql_settings.connection_auto_close);
     return Pipe(std::make_shared<MySQLWithFailoverSource>(pool, query, sample_block, mysql_input_stream_settings));
+    */
+    return Pipe::unitePipes(std::move(pipes)) ;
 }
 
 
