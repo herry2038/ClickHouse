@@ -19,7 +19,7 @@
 #include <QueryPipeline/Pipe.h>
 #include <Common/parseRemoteDescription.h>
 #include <base/logger_useful.h>
-
+#include <Common/HashTable/HashMap.h>
 
 namespace DB
 {
@@ -106,8 +106,6 @@ Pipe StorageScadb::read(
                 segment.table,
                 context_);
         LOG_TRACE(log, "Query: {}", query);
-        if ( segment.backend == "backend2" )
-            continue ;
         mysqlxx::PoolWithFailoverPtr pool = metadata_->getPool(segment.backend);
         StreamSettings mysql_input_stream_settings(context_->getSettingsRef(),
             mysql_settings.connection_auto_close);
@@ -153,16 +151,14 @@ public:
     explicit StorageScadbSink(
         const StorageScadb & storage_,
         const StorageMetadataPtr & metadata_snapshot_,
-        const std::string & remote_database_name_,
-        const std::string & remote_table_name_,
-        const mysqlxx::PoolWithFailover::Entry & entry_,
+        std::shared_ptr<ScadbMetadata> metadata_,
+        //const mysqlxx::PoolWithFailover::Entry & entry_,
         const size_t & mysql_max_rows_to_insert)
         : SinkToStorage(metadata_snapshot_->getSampleBlock())
         , storage{storage_}
         , metadata_snapshot{metadata_snapshot_}
-        , remote_database_name{remote_database_name_}
-        , remote_table_name{remote_table_name_}
-        , entry{entry_}
+        , metadata{metadata_}        
+        //, entry{entry_}
         , max_batch_rows{mysql_max_rows_to_insert}
     {
     }
@@ -172,6 +168,8 @@ public:
     void consume(Chunk chunk) override
     {
         auto block = getHeader().cloneWithColumns(chunk.detachColumns());
+        auto partitionBlocks = splitBlockIntoPartitions(block);        
+
         auto blocks = splitBlocks(block, max_batch_rows);
         mysqlxx::Transaction trans(entry);
         try
@@ -189,13 +187,85 @@ public:
         }
     }
 
-    void writeBlockData(const Block & block)
+    std::map<int, Block> splitBlockIntoPartitions(const Block & block)
+    {
+        auto & key = metadata->getMetadata().shardKey ;
+        const DB::ColumnWithTypeAndName* column = nullptr; 
+        for ( size_t i = 0 ; i< block.columns(); i++ )
+        {
+            auto & columnAndPos = block.getByPosition(i) ;
+            if ( columnAndPos.name == key )
+            {
+                column = &columnAndPos ;
+            }
+        }
+        if ( column == nullptr ) 
+        {
+            throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                        "Scadb insert must has partition key: {}", key);
+        }
+        
+        column->column
+    }
+
+
+    size_t scadbHash(size_t row, const DB::ColumnWithTypeAndName& column)
+    {
+        // 先支持INT型的hash，TODO: string型的分区键，后面在支持
+        auto ti = column.type->getTypeId();        
+        if ( ti >= TypeIndex::UInt8 && ti <= TypeIndex::Int256) 
+        {
+            return column.column->getUInt(row) % metadata->getMetadata().partitions();
+        }
+        else if ( ti >= TypeIndex::String && ti <= TypeIndex::FixedString )
+        {   
+            return (size_t) (atoi(column.column->getRawData().data)) ;
+        }
+
+        throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                        "Scadb partition value type : {} invalid!" , ti);
+    }
+
+    void buildPartitionSelector(const DB::ColumnWithTypeAndName& column, PODArray<size_t> & partition_num_to_first_row, IColumn::Selector & selector)
+    {
+        using Data = HashMap<size_t, size_t, UINT128TrivialHash>;
+        Data partitions_map ;
+
+        size_t num_rows = column.column->size() ;
+
+        size_t partitions_count = 0;
+        for (size_t i=0 ;i <num_rows; ++i)
+        {
+            Data::key_type key = scadbHash(i, column);
+            typename Data::LookupResult it ; 
+            bool inserted ;
+            partitions_map.emplace(key, it, inserted); 
+
+            if ( inserted )
+            {
+                partition_num_to_first_row.push_back(i);
+                it->getMapped() = partitions_count;
+
+                /// Optimization for common case when there is only one partition - defer selector initialization.
+                if ( partitions_map.size() == 2 )
+                {
+                    selector = IColumn::Selector(num_rows);
+                    std::fill(selector.begin(), selector.begin() + i, 0);
+                }
+            }
+
+            if (partitions_count > 1) 
+                selector[i] = it->getMapped(); 
+        }
+    }
+
+    void writeBlockData(const Block & block, std::string& table, mysqlxx::PoolWithFailover::Entry& entry)
     {
         WriteBufferFromOwnString sqlbuf;
         sqlbuf << (storage.replace_query ? "REPLACE" : "INSERT") << " INTO ";
-        if (!remote_database_name.empty())
-            sqlbuf << backQuoteMySQL(remote_database_name) << ".";
-        sqlbuf << backQuoteMySQL(remote_table_name);
+        if (!metadata->getDatabase().empty())
+            sqlbuf << backQuoteMySQL(metadata->getDatabase()) << ".";
+        sqlbuf << backQuoteMySQL(table);
         sqlbuf << " (" << dumpNamesWithBackQuote(block) << ") VALUES ";
 
         auto writer = FormatFactory::instance().getOutputFormat("Values", sqlbuf, metadata_snapshot->getSampleBlock(), storage.getContext());
@@ -206,7 +276,7 @@ public:
 
         sqlbuf << ";";
 
-        auto query = this->entry->query(sqlbuf.str());
+        auto query = entry->query(sqlbuf.str());
         query.execute();
     }
 
@@ -255,8 +325,9 @@ public:
 private:
     const StorageScadb & storage;
     StorageMetadataPtr metadata_snapshot;
-    std::string remote_database_name;
-    std::string remote_table_name;
+    //std::string remote_database_name;
+    //std::string remote_table_name;
+    std::shared_ptr<ScadbMetadata> metadata ;
     mysqlxx::PoolWithFailover::Entry entry;
     size_t max_batch_rows;
 };
