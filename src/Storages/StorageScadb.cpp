@@ -144,6 +144,19 @@ Pipe StorageScadb::read(
     return Pipe::unitePipes(std::move(pipes)) ;
 }
 
+    struct BlockWithPartitionTable
+    {
+        Block block;
+        std::string partition_table;   
+        std::string backend ;     
+
+        BlockWithPartitionTable(Block && block_, std::string && partition_, std::string && backend_)
+            : block(block_), partition_table(std::move(partition_)), backend(std::move(backend_))
+        {
+        }
+    };
+    using BlocksWithPartitionTable = std::vector<BlockWithPartitionTable>;
+
 
 class StorageScadbSink : public SinkToStorage
 {
@@ -153,13 +166,15 @@ public:
         const StorageMetadataPtr & metadata_snapshot_,
         std::shared_ptr<ScadbMetadata> metadata_,
         //const mysqlxx::PoolWithFailover::Entry & entry_,
-        const size_t & mysql_max_rows_to_insert)
+        const size_t & mysql_max_rows_to_insert,
+        Poco::Logger * log_)
         : SinkToStorage(metadata_snapshot_->getSampleBlock())
         , storage{storage_}
         , metadata_snapshot{metadata_snapshot_}
         , metadata{metadata_}        
         //, entry{entry_}
         , max_batch_rows{mysql_max_rows_to_insert}
+        , log(log_)
     {
     }
 
@@ -170,24 +185,30 @@ public:
         auto block = getHeader().cloneWithColumns(chunk.detachColumns());
         auto partitionBlocks = splitBlockIntoPartitions(block);        
 
-        auto blocks = splitBlocks(block, max_batch_rows);
-        mysqlxx::Transaction trans(entry);
-        try
-        {
-            for (const Block & batch_data : blocks)
+        for (const BlockWithPartitionTable& blockWithPartition: partitionBlocks) 
+        {            
+            auto blocks = splitBlocks(blockWithPartition.block, max_batch_rows);
+            mysqlxx::PoolWithFailoverPtr p = metadata->getPool(blockWithPartition.backend); 
+            auto entry = p->get();
+            mysqlxx::Transaction trans(entry);
+            try
             {
-                writeBlockData(batch_data);
+                for (const Block & batch_data : blocks)
+                {
+                    writeBlockData(batch_data, blockWithPartition.partition_table, entry);
+                }
+                trans.commit();
             }
-            trans.commit();
-        }
-        catch (...)
-        {
-            trans.rollback();
-            throw;
+            catch (...)
+            {
+                trans.rollback();
+                throw;
+            }
         }
     }
 
-    std::map<int, Block> splitBlockIntoPartitions(const Block & block)
+
+    BlocksWithPartitionTable splitBlockIntoPartitions(const Block & block)
     {
         auto & key = metadata->getMetadata().shardKey ;
         const DB::ColumnWithTypeAndName* column = nullptr; 
@@ -205,7 +226,47 @@ public:
                         "Scadb insert must has partition key: {}", key);
         }
         
-        column->column
+        PODArray<size_t> partition_num_to_partition_id;
+        IColumn::Selector selector;
+        buildPartitionSelector(*column, partition_num_to_partition_id, selector);
+        BlocksWithPartitionTable result;
+        size_t partitions_count = partition_num_to_partition_id.size();
+        result.reserve(partitions_count);
+
+        auto get_partition_table_name = [&](size_t num)
+        {
+            auto it = metadata->getMetadata().partitions.find(partition_num_to_partition_id[num]);
+            if ( it == metadata->getMetadata().partitions.end() ) 
+            {
+                // IMPOSSIBLE
+                throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                        "Scadb partition invalide : {} invalid!" , partition_num_to_partition_id[0]);
+            }            
+            return std::pair<std::string, std::string>(it->second.table, it->second.backend);
+        };
+        
+        if ( partitions_count == 1) 
+        {        
+            auto pair = get_partition_table_name(0) ;
+            result.emplace_back(Block(block), std::string(pair.first), std::string(pair.second));  
+            return result;
+        }
+
+
+        for (size_t i = 0; i < partitions_count; ++i)
+        {
+            auto pair = get_partition_table_name(i) ;
+            result.emplace_back(block.cloneEmpty(), std::string(pair.first), std::string(pair.second));  
+        }
+
+        for (size_t col = 0; col < block.columns(); ++ col)
+        {
+            MutableColumns scattered = block.getByPosition(col).column->scatter(partitions_count, selector);
+            for (size_t i = 0; i < partitions_count; ++i)
+                result[i].block.getByPosition(col).column = std::move(scattered[i]);
+        }
+        return result;
+
     }
 
 
@@ -215,11 +276,11 @@ public:
         auto ti = column.type->getTypeId();        
         if ( ti >= TypeIndex::UInt8 && ti <= TypeIndex::Int256) 
         {
-            return column.column->getUInt(row) % metadata->getMetadata().partitions();
+            return column.column->getUInt(row) % (metadata->getMetadata().partitions.size());
         }
         else if ( ti >= TypeIndex::String && ti <= TypeIndex::FixedString )
         {   
-            return (size_t) (atoi(column.column->getRawData().data)) ;
+            return static_cast<size_t> (atoi(column.column->getRawData().data)) % (metadata->getMetadata().partitions.size()) ;
         }
 
         throw Exception(ErrorCodes::BAD_ARGUMENTS,
@@ -228,7 +289,7 @@ public:
 
     void buildPartitionSelector(const DB::ColumnWithTypeAndName& column, PODArray<size_t> & partition_num_to_first_row, IColumn::Selector & selector)
     {
-        using Data = HashMap<size_t, size_t, UINT128TrivialHash>;
+        using Data = HashMap<size_t, size_t>;
         Data partitions_map ;
 
         size_t num_rows = column.column->size() ;
@@ -243,9 +304,10 @@ public:
 
             if ( inserted )
             {
-                partition_num_to_first_row.push_back(i);
+                partition_num_to_first_row.push_back(key);
                 it->getMapped() = partitions_count;
-
+                
+                ++ partitions_count;
                 /// Optimization for common case when there is only one partition - defer selector initialization.
                 if ( partitions_map.size() == 2 )
                 {
@@ -259,7 +321,7 @@ public:
         }
     }
 
-    void writeBlockData(const Block & block, std::string& table, mysqlxx::PoolWithFailover::Entry& entry)
+    void writeBlockData(const Block & block, const std::string& table, mysqlxx::PoolWithFailover::Entry& entry)
     {
         WriteBufferFromOwnString sqlbuf;
         sqlbuf << (storage.replace_query ? "REPLACE" : "INSERT") << " INTO ";
@@ -275,6 +337,7 @@ public:
             sqlbuf << " ON DUPLICATE KEY " << storage.on_duplicate_clause;
 
         sqlbuf << ";";
+        LOG_TRACE(log, "Query: {}", sqlbuf.str());
 
         auto query = entry->query(sqlbuf.str());
         query.execute();
@@ -328,8 +391,9 @@ private:
     //std::string remote_database_name;
     //std::string remote_table_name;
     std::shared_ptr<ScadbMetadata> metadata ;
-    mysqlxx::PoolWithFailover::Entry entry;
+    //mysqlxx::PoolWithFailover::Entry entry;
     size_t max_batch_rows;
+    Poco::Logger * log;
 };
 
 
@@ -338,11 +402,10 @@ SinkToStoragePtr StorageScadb::write(const ASTPtr & /*query*/, const StorageMeta
     return std::make_shared<StorageScadbSink>(
         *this,
         metadata_snapshot,
-        metadata_->getDatabase(),
-        metadata_->getTable(),
+        metadata_,        
         //pool->get(), 
-        mysqlxx::PoolWithFailover::Entry(),  //只为让编译通过
-        local_context->getSettingsRef().mysql_max_rows_to_insert);
+        //mysqlxx::PoolWithFailover::Entry(),  //只为让编译通过
+        local_context->getSettingsRef().mysql_max_rows_to_insert, log);
 }
 
 

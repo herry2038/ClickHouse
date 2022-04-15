@@ -3,10 +3,10 @@
 #include <mysqlxx/PoolWithFailover.h>
 #include <Storages/MySQL/MySQLSettings.h>
 
-#define CDB_INFO_PATH  "/scasql/admin/cdb"
 #define SCASAL_BUSINESS_PATH "/scasql/businesses/"
 
-#define CDB_ADDRESS "cdboffline.dbms.self.yydevops.com"
+#define DATABASE_ADDRESS "www.database.com"
+
 namespace DB
 {    
 class ScadbMetadata
@@ -42,8 +42,7 @@ private:
     const std::string   business;
     const std::string   database;
     const std::string   table;
-// Real Metadata
-    //std::map<std::string, std::string> cdbs;
+// Real Metadata    
     //std::vector<std::string>           backends;
     std::map<std::string, mysqlxx::PoolWithFailoverPtr> backends;
     ScadbTable          tableMeta;

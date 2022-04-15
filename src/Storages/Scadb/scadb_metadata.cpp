@@ -55,14 +55,14 @@ void ScadbMetadata::load()
     tableMeta.load(value);
     tableMeta.print() ;
 
-    std::pair<std::string, uint16_t> address = std::make_pair(CDB_ADDRESS, 8066);
+    std::pair<std::string, uint16_t> address = std::make_pair(DATABASE_ADDRESS, 8066);
     mysqlxx::PoolWithFailover::RemoteDescription raddress ;
     raddress.push_back(address) ;
     for ( auto& pc: tableMeta.partitionsConfig ) {
         if ( backends.find(pc.backend) == backends.end()) {        
             mysqlxx::PoolWithFailover p(
                 database, raddress,
-                std::string("myshard@") + pc.backend + "@fix", "44poopvRgOlwStt2gfxRGNPv",
+                std::string("user@") + pc.backend + "@fix", "password",
                 MYSQLXX_POOL_WITH_FAILOVER_DEFAULT_START_CONNECTIONS,
                 mysql_settings.connection_pool_size,
                 mysql_settings.connection_max_tries,
